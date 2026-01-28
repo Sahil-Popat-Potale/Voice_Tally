@@ -5,8 +5,8 @@ const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || '127.0.0.1'; // STRICT: Localhost only
+const PORT = process.env.PORT;
+const HOST = process.env.HOST; // STRICT: Localhost only
 
 // --- SECURITY MIDDLEWARE ---
 
@@ -15,7 +15,7 @@ app.use(helmet());
 
 // 2. CORS: Restrict access to specific origins (e.g., your extension ID)
 // For MVP dev, we allow all, but in prod, this should be your Extension ID.
-app.use(cors({ origin: '*' })); 
+app.use(cors({ origin: '*' }));
 
 // 3. Rate Limiter: Prevent brute force/DoS
 const limiter = rateLimit({
@@ -40,15 +40,18 @@ app.get('/health', (req, res) => {
 });
 
 // 2. Sales Data Endpoint
-app.get('/sales', (req, res) => {
+const { getSales } = require('./file_ingestion');
+
+// 2. Sales Data Endpoint
+app.get('/sales', async (req, res) => {
   // Input Validation
   const period = req.query.period;
 
   // Strict Parameter Validation
   if (period && !VALID_PERIODS.includes(period)) {
-    return res.status(400).json({ 
-      error: "Invalid Parameter", 
-      message: `Period must be one of: ${VALID_PERIODS.join(', ')}` 
+    return res.status(400).json({
+      error: "Invalid Parameter",
+      message: `Period must be one of: ${VALID_PERIODS.join(', ')}`
     });
   }
 
@@ -64,15 +67,13 @@ app.get('/sales', (req, res) => {
     });
   }
 
-  // Mock Data Logic
-  const data = {
-    period: period || 'week', // Default to week
-    total: period === 'month' ? 450000 : 124500,
-    currency: "INR",
-    transaction_count: period === 'month' ? 120 : 45
-  };
-
-  res.json(data);
+  try {
+    const data = await getSales({ period });
+    res.json(data);
+  } catch (err) {
+    console.error("Data Fetch Error:", err);
+    res.status(500).json({ error: "Failed to load data." });
+  }
 });
 
 // --- GLOBAL ERROR HANDLER ---
@@ -86,3 +87,59 @@ app.listen(PORT, HOST, () => {
   console.log(`[VoiceTally-Backend] Securely running at http://${HOST}:${PORT}`);
   console.log(`[Security] Rate Limit: ${process.env.RATE_LIMIT_MAX_REQ} reqs / ${process.env.RATE_LIMIT_WINDOW_MIN} min`);
 });
+
+// Conceptual Implementation, Secure STT Endpoint (Fragment)
+const multer = require('multer'); // Middleware for multipart/form-data
+const fs = require('fs');
+const { exec } = require('child_process');
+
+// 1. Configure Storage (Ephemeral)
+const upload = multer({
+  dest: require('os').tmpdir(), // Save to RAM-disk or Temp
+  limits: {
+    fileSize: 1024 * 1024, // 1MB Hard Limit
+    files: 1
+  }
+});
+
+// 2. Global Lock (Simple Concurrency Control)
+let isTranscribing = false;
+
+app.post('/transcribe', upload.single('audio'), (req, res) => {
+  // A. Concurrency Check
+  if (isTranscribing) {
+    cleanup(req.file.path);
+    return res.status(429).json({ error: "System busy processing another voice command." });
+  }
+
+  // B. Validation
+  if (!req.file) return res.status(400).json({ error: "No audio file provided." });
+  if (req.file.mimetype !== 'audio/wav' && req.file.mimetype !== 'audio/webm') {
+    cleanup(req.file.path);
+    return res.status(400).json({ error: "Invalid format. Send WAV or WebM." });
+  }
+
+  isTranscribing = true;
+
+  // C. Execute Local Whisper (Example Command)
+  // Assumes 'whisper-main' executable is in path or bundled
+  const cmd = `./bin/whisper-main -m models/ggml-tiny.en.bin -f "${req.file.path}" -nt`;
+
+  const process = exec(cmd, { timeout: 10000 }, (error, stdout, stderr) => {
+    isTranscribing = false;
+    cleanup(req.file.path); // D. Security: Immediate Deletion
+
+    if (error) {
+      console.error("STT Error:", stderr);
+      return res.status(500).json({ error: "Transcription failed." });
+    }
+
+    // E. Text Normalization
+    const cleanText = stdout.trim().replace(/\[.*?\]/g, ''); // Remove timestamps/metadata
+    res.json({ success: true, text: cleanText });
+  });
+});
+
+function cleanup(path) {
+  if (path && fs.existsSync(path)) fs.unlinkSync(path);
+}
