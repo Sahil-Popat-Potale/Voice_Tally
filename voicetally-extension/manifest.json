@@ -16,5 +16,19 @@
   "host_permissions": [
     "http://127.0.0.1:3000/*"
   ],
-  "permissions": [] 
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "microphone",
+    "tts",
+    "ttsEngine",
+    "history",
+    "webRequest",
+    "tabs",
+    "downloads",
+    "notifications",
+    "sessions",
+    "privacy"
+  ]
 }
