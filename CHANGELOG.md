@@ -2,7 +2,7 @@
 
 ---
 
-Log Date: 25-01-2026 - 28-01-2026
+Log Date: 25-01-2026 - 30-01-2026
 
 This changelog covers the new features implemented for VoiceTally: Voice/STT Integration and Real-World Backend with File Ingestion.
 
