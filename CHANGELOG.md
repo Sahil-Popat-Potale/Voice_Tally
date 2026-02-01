@@ -2,6 +2,20 @@
 
 ---
 
+Log Date: 01-02-2026
+
+### Changes
+
+1. **Manifest.json:** clean and minimal, only required permissions are kept.
+
+2. **Background.js:** simple query handler upgrade to "Robust Query Handling" with better error handling and user-friendly messages, it extracts date, status, customer from the query and sends it to the backend.
+
+3. **file_ingestion.js:** file ingestion with validation and error handling and advanced query handling with filtering.
+
+4. **server.js:** now accepts rich parameters alongside period.
+
+---
+
 Log Date: 25-01-2026 - 30-01-2026
 
 This changelog covers the new features implemented for VoiceTally: Voice/STT Integration and Real-World Backend with File Ingestion.

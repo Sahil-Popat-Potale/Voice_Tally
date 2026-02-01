@@ -19,16 +19,6 @@
   "permissions": [
     "activeTab",
     "scripting",
-    "storage",
-    "microphone",
-    "tts",
-    "ttsEngine",
-    "history",
-    "webRequest",
-    "tabs",
-    "downloads",
-    "notifications",
-    "sessions",
-    "privacy"
+    "storage"
   ]
 }

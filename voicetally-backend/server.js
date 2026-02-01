@@ -45,9 +45,9 @@ const { getSales } = require('./file_ingestion');
 // 2. Sales Data Endpoint
 app.get('/sales', async (req, res) => {
   // Input Validation
-  const period = req.query.period;
+  const { period, customer, status, from, to } = req.query;
 
-  // Strict Parameter Validation
+  // Strict Parameter Validation for PERIOD only if it exists
   if (period && !VALID_PERIODS.includes(period)) {
     return res.status(400).json({
       error: "Invalid Parameter",
@@ -56,7 +56,8 @@ app.get('/sales', async (req, res) => {
   }
 
   // Check for unexpected parameters (Whitelisting approach)
-  const allowedKeys = ['period'];
+  // Expanded whitelist for robust queries
+  const allowedKeys = ['period', 'customer', 'status', 'from', 'to'];
   const queryKeys = Object.keys(req.query);
   const invalidKeys = queryKeys.filter(key => !allowedKeys.includes(key));
 
@@ -68,7 +69,8 @@ app.get('/sales', async (req, res) => {
   }
 
   try {
-    const data = await getSales({ period });
+    // Pass all checks
+    const data = await getSales({ period, customer, status, from, to });
     res.json(data);
   } catch (err) {
     console.error("Data Fetch Error:", err);

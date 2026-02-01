@@ -7,7 +7,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  
+
   // 1. Validate Message Structure
   if (message.type !== 'QUERY_TALLY' || !message.payload || typeof message.payload !== 'string') {
     console.warn("Invalid message received:", message);
@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (err.message.includes("Failed to fetch")) userMsg = "Local Connector is offline.";
       else if (err.name === 'AbortError') userMsg = "Request timed out.";
       else userMsg = err.message;
-      
+
       sendResponse({ success: false, error: userMsg });
     });
 
@@ -38,13 +38,41 @@ async function handleConnectorRequest(query) {
   const normalizedQuery = query.toLowerCase().trim();
   let endpoint = '';
 
-  // Simple intent routing (in a real app, this would be more robust)
-  if (normalizedQuery.includes('sales')) {
-    endpoint = '/sales?period=week'; // Defaulting to week for MVP
-  } else if (normalizedQuery === 'health') {
+  // --- ROBUST INTENT PARSER ---
+  // Intent: SALES
+  if (normalizedQuery.includes('sales') || normalizedQuery.includes('sells') || normalizedQuery.includes('revenue')) {
+    endpoint = '/sales?';
+    const params = new URLSearchParams();
+
+    // 1. Date Extraction (Simple Heuristics)
+    if (normalizedQuery.includes('last week')) params.append('period', 'week');
+    else if (normalizedQuery.includes('last month')) params.append('period', 'month');
+    else if (normalizedQuery.includes('last year')) params.append('period', 'year');
+
+    // 2. Status Extraction
+    if (normalizedQuery.includes('pending') || normalizedQuery.includes('unpaid')) params.append('status', 'pending');
+    else if (normalizedQuery.includes('paid')) params.append('status', 'paid');
+
+    // 3. Customer Extraction (Regex: "for customer [name]" or "for [name]")
+    // Matches "for client X", "for customer X", "for X"
+    const customerMatch = normalizedQuery.match(/for\s+(?:customer\s+|client\s+)?([a-z0-9\s]+)/i);
+    if (customerMatch && customerMatch[1]) {
+      // Stop capturing at common stopwords if query continues
+      let custName = customerMatch[1].trim();
+      const stopWords = [' last', ' today', ' yesterday', ' from'];
+      stopWords.forEach(sw => {
+        if (custName.includes(sw)) custName = custName.split(sw)[0];
+      });
+      params.append('customer', custName);
+    }
+
+    endpoint += params.toString();
+  }
+  // Intent: HEALTH
+  else if (normalizedQuery.includes('health') || normalizedQuery.includes('status')) {
     endpoint = '/health';
   } else {
-    throw new Error("Unknown command. Try 'sales'.");
+    throw new Error("I can only answer about Sales and System Health for now. Try 'sales for last month' or 'pending sales'.");
   }
 
   const controller = new AbortController();
