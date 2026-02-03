@@ -20,5 +20,14 @@
     "activeTab",
     "scripting",
     "storage"
-  ]
+  ],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+9",
+        "mac": "Command+Shift+9"
+      },
+      "description": "Open VoiceTally Popup"
+    }
+  }
 }

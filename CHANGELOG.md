@@ -1,10 +1,8 @@
 # VoiceTally Extension Changelog's
-
 ---
+Log Date: 03-02-2026
 
-Log Date: 01-02-2026
-
-### Changes
+### Changes/Audit
 
 1. **Manifest.json:** clean and minimal, only required permissions are kept.
 
