@@ -1,66 +1,46 @@
-# VoiceTally Project Code Audit & Issues
+# VoiceTally Project Issue Tracker
 
-This document lists issues identified during a comprehensive scan of the `voicetally-backend` and `voicetally-extension` codebases (excluding `data/` and `node_modules/`).
+This document tracks the status of identified issues in the codebase.
 
-## 1. Security Vulnerabilities
+---
 
-### [CRITICAL] Permissive CORS Configuration
-- **File**: `voicetally-backend/server.js` (Line 18)
-- **Issue**: `app.use(cors({ origin: '*' }));` allows any website to query your local server. Malicious sites could scan `127.0.0.1:3000` and steal financial data.
-- **Production Fix**:
-  Restrict origin to your specific Chrome Extension ID.
-  1. Add `EXTENSION_ID` to `.env`.
-  2. Update `server.js`:
-     ```javascript
-     const corsOptions = {
-       origin: process.env.NODE_ENV === 'production' 
-         ? `chrome-extension://${process.env.EXTENSION_ID}` 
-         : '*', // Dev mode
-       optionsSuccessStatus: 200
-     };
-     app.use(cors(corsOptions));
-     ```
+## 🔴 Unresolved Issues
+*(Critical issues pending action)*
 
-### [MEDIUM] Unused Extension Permissions
-- **File**: `voicetally-extension/manifest.json` (Lines 20-21)
-- **Issue**: `activeTab` and `scripting` permissions are declared but not used in the current Popup -> Background -> Server architecture. Unused permissions increase attack surface and user suspicion.
-- **Production Fix**: Remove them if no content scripts are planned.
-  ```json
-  "permissions": ["storage"] 
-  ```
+> **Status**: Great job! No critical unresolved issues identified at this time.
 
-## 2. Scalability & Performance
+---
 
-### [HIGH] In-Memory Data Storage
-- **File**: `voicetally-backend/file_ingestion.js` (Lines 7, 67, 95)
-- **Issue**: `cachedSales` loads the entire CSV/XML file into RAM. For large Tally exports (e.g., 500MB+), this will crash the Node.js process (OOM).
-- **Production Fix**: Switch to a lightweight embedded database like **SQLite**.
-  - **Ingestion**: Parse CSV stream -> Insert into SQLite `sales` table.
-  - **Query**: Use SQL (`SELECT sum(amount) FROM sales WHERE ...`).
-  - *Benefits*: Low RAM usage, instant filtering, ACID compliance.
+## ⚠️ Deferred Issues
+*(Identified but postponed)*
 
-### [MEDIUM] Synchronous Filter Logic
-- **File**: `voicetally-backend/file_ingestion.js`
-- **Issue**: `filtered.filter(...)` runs on the main thread. Large datasets will block the event loop, causing request timeouts.
-- **Fix**: Moving to SQLite (above) solves this. Alternatively, use Node.js Worker Threads for processing.
+### ⏳ In-Memory Data Storage
+- **Section**: Scalability
+- **Issue**: `file_ingestion.js` loads the entire CSV into RAM. Large datasets (>500MB) will crash the server.
+- **Recommendation**: Migrate to **SQLite** for disk-based storage and efficient SQL querying.
+- **Status**: **DEFERRED** (Per user instruction: "Ignore scalability for now")
 
-## 3. Code Quality & Maintenance
+---
 
-### [MEDIUM] Hardcoded Configuration
-- **File**: `voicetally-extension/background.js` (Line 2)
-- **Issue**: `const CONNECTOR_BASE_URL = 'http://127.0.0.1:3000';` is hardcoded. Changing ports requires extension recompilation.
-- **Production Fix**: proper `options.html` page for the extension where the user can configure the connector URL, stored in `chrome.storage.local`.
+## ✅ Resolved Issues
+*(Fixed and verified)*
 
-### [LOW] Conceptual STT Endpoint
-- **File**: `voicetally-backend/server.js` (Lines 91-143)
-- **Issue**: The `/transcribe` endpoint is implemented as a "Conceptual Fragment" using `child_process.exec`. It relies on an external binary (`whisper-main`) existing in a specific path.
-- **Fix**:
-  - Integrate a Node.js binding for Whisper (e.g., `whisper-node`) instead of raw `exec` calls.
-  - Or officially deprecated this endpoint if client-side Web Speech API is the primary method.
+### 🔒 Security: Permissive CORS Configuration
+- **Issue**: Backend allowed all origins (`*`), posing a risk of data theft from malicious sites.
+- **Resolution**: Updated `server.js` to strictly allow only the specific Chrome Extension ID (configurable via `.env`).
 
-## 4. Robustness
+### 🔒 Security: Unused Extension Permissions
+- **Issue**: `manifest.json` requested `activeTab` and `scripting` without using them.
+- **Resolution**: Removed unnecessary permissions. Now only requests `storage`.
 
-### [LOW] Loose Date Parsing
-- **File**: `voicetally-backend/file_ingestion.js` (Line 29)
-- **Issue**: `new Date(record[dateKey])` is inconsistent across locales (e.g., MM/DD vs DD/MM). Tally often exports DD-MM-YYYY which JS parses incorrectly or invalidates.
-- **Production Fix**: Use a date library like `date-fns` or `moment` with explicit format strings (e.g., `parse(dateStr, 'dd-MM-yyyy', new Date())`).
+### 🛠 Quality: Hardcoded Connector URL
+- **Issue**: Extension hardcoded `http://127.0.0.1:3000`, making it hard to change ports.
+- **Resolution**: Refactored `background.js` to read `connectorUrl` from `chrome.storage.local`.
+
+### 🛠 Quality: Conceptual STT Endpoint
+- **Issue**: `server.js` contained a non-functional "conceptual" endpoint for Whisper CLI.
+- **Resolution**: Removed the dead code to ensure the backend is production-ready and lean.
+
+### 🛡 Robustness: Robust Date Parsing
+- **Issue**: JS `Date()` failed on common Tally formats (e.g., DD-MM-YYYY), leading to skipped records.
+- **Resolution**: Implemented `date-fns` in `file_ingestion.js` to intelligently parse generic ISO, `dd-MM-yyyy`, and slash-separated formats.

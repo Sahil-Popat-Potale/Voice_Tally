@@ -6,11 +6,15 @@ Log Date: 04-02-2026
 
 ### Changes/Audit
 
-1. **Background.js:** added hotkey support for opening the popup.
+1. **Background.js:** added hotkey support for opening the popup, Refactored `background.js` to read `connectorUrl` from `chrome.storage.local`.
 
 2. **data/sales.csv:** added more data for testing.
 
-3. **manifest.json:** added hotkey support for opening the popup.
+3. **manifest.json:** added hotkey support for opening the popup, removed unused permissions.
+
+4. **ISSUES.md:** updated issues tracking.
+
+5. **file_ingestion.js:** Implemented `date-fns` in `file_ingestion.js` to intelligently parse generic ISO, `dd-MM-yyyy`, and slash-separated formats.
 
 ---
 

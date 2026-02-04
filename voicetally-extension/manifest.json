@@ -17,8 +17,6 @@
     "http://127.0.0.1:3000/*"
   ],
   "permissions": [
-    "activeTab",
-    "scripting",
     "storage"
   ],
   "commands": {

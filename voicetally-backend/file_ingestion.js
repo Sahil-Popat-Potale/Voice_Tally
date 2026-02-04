@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
 const xml2js = require('xml2js');
+const { parse, isValid, parseISO } = require('date-fns');
 
 // Store data in memory
 let cachedSales = [];
@@ -26,11 +27,28 @@ function normalizeRecord(record) {
     const statusKey = Object.keys(record).find(k => k.toLowerCase().includes('status') || k.toLowerCase().includes('state')) || 'status';
 
     const amount = parseFloat(record[amountKey]);
-    const date = new Date(record[dateKey]); // Strict parsing needed in prod
+    let date;
+    const dateStr = record[dateKey];
+
+    // Robust Date Parsing
+    // 1. Try generic ISO/JS parse first
+    date = new Date(dateStr);
+
+    // 2. If invalid, try explicit formats common in Tally (DD-MM-YYYY or DD/MM/YYYY)
+    if (isNaN(date.getTime())) {
+        const formats = ['dd-MM-yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd'];
+        for (const fmt of formats) {
+            const parsed = parse(dateStr, fmt, new Date());
+            if (isValid(parsed)) {
+                date = parsed;
+                break;
+            }
+        }
+    }
 
     // Validation
     if (isNaN(amount)) return null;
-    if (isNaN(date.getTime())) return null;
+    if (!date || isNaN(date.getTime())) return null;
 
     return {
         date: date.toISOString(),

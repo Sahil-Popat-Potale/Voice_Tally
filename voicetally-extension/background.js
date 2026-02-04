@@ -1,6 +1,13 @@
-// CONFIGURATION
-const CONNECTOR_BASE_URL = 'http://127.0.0.1:3000';
+const DEFAULT_CONNECTOR_URL = 'http://127.0.0.1:3000';
 const REQUEST_TIMEOUT_MS = 3000; // 3 seconds max wait time
+
+async function getConnectorUrl() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['connectorUrl'], (result) => {
+      resolve(result.connectorUrl || DEFAULT_CONNECTOR_URL);
+    });
+  });
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("VoiceTally Background Service Online");
@@ -84,8 +91,10 @@ async function handleConnectorRequest(query) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+  const baseUrl = await getConnectorUrl();
+
   try {
-    const response = await fetch(`${CONNECTOR_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${baseUrl}${endpoint}`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal
