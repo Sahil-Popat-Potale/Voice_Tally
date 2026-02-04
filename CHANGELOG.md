@@ -1,5 +1,19 @@
 # VoiceTally Extension Changelog's
+
 ---
+
+Log Date: 04-02-2026
+
+### Changes/Audit
+
+1. **Background.js:** added hotkey support for opening the popup.
+
+2. **data/sales.csv:** added more data for testing.
+
+3. **manifest.json:** added hotkey support for opening the popup.
+
+---
+
 Log Date: 03-02-2026
 
 ### Changes/Audit

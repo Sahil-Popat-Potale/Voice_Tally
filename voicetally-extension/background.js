@@ -6,6 +6,12 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("VoiceTally Background Service Online");
 });
 
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "_execute_action") {
+    console.log("Action triggered by hotkey");
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // 1. Validate Message Structure
