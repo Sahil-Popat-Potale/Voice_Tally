@@ -9,8 +9,11 @@ async function getConnectorUrl() {
   });
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   console.log("VoiceTally Background Service Online");
+  if (details.reason === 'install') {
+    chrome.tabs.create({ url: 'welcome.html' });
+  }
 });
 
 chrome.commands.onCommand.addListener((command) => {

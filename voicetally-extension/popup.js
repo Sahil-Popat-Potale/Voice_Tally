@@ -12,126 +12,111 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- SPEECH RECOGNITION SETUP ---
-  
-  // 1. Browser Compatibility Check
-  // We check for the prefixed version common in Chromium browsers
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  if (!SpeechRecognition) {
-    // Graceful Degradation: Hide mic button if API is missing
+  // --- LOCAL STT SETUP (MediaRecorder + Backend Whisper) ---
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     micBtn.style.display = 'none';
+    showOutput("Error: Audio API not supported", "error");
   } else {
-    initializeVoice(SpeechRecognition);
+    setupLocalVoice();
   }
 
-  function initializeVoice(RecognitionClass) {
-    const recognition = new RecognitionClass();
-    
-    // Configuration
-    recognition.continuous = false; // Stop automatically after one sentence
-    recognition.interimResults = true; // Show text while speaking (feedback)
-    recognition.lang = 'en-US'; 
-    recognition.maxAlternatives = 1;
+  function setupLocalVoice() {
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
 
-    let isListening = false;
-    let watchdogTimer = null; // Security timeout reference
-
-    // Button Toggle Logic
-    micBtn.addEventListener('click', () => {
-      if (isListening) {
-        recognition.stop();
+    micBtn.addEventListener('click', async () => {
+      if (isRecording) {
+        stopRecording();
       } else {
-        startListening();
+        await startRecording();
       }
     });
 
-    function startListening() {
-      // Clear previous states
-      output.textContent = "";
-      output.classList.remove('error');
-      input.value = "";
-      
+    async function startRecording() {
       try {
-        recognition.start(); // This triggers permission prompt on first use
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = event => {
+          audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          isRecording = false;
+          micBtn.classList.remove('listening');
+          updateStatus("Processing...");
+
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          await sendAudioToBackend(audioBlob);
+
+          // Stop all tracks to release mic
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.classList.add('listening');
+        updateStatus("Listening...");
+
+        // Auto-stop after 10s
+        setTimeout(() => {
+          if (isRecording) stopRecording();
+        }, 10000);
+
       } catch (err) {
-        // Handle race conditions (e.g., clicking too fast)
-        updateStatus("Mic Error: Try again.", true);
+        console.error(err);
+        if (err.name === 'NotAllowedError') { // Permission denied
+          updateStatus("Permission needed.");
+          // Open onboarding if denied
+          chrome.tabs.create({ url: 'welcome.html' });
+        } else {
+          updateStatus("Mic Error: Try again.");
+        }
       }
     }
 
-    // --- API EVENT HANDLERS ---
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+    }
 
-    recognition.onstart = () => {
-      isListening = true;
-      micBtn.classList.add('listening');
-      updateStatus("Listening... (10s max)");
+    async function sendAudioToBackend(blob) {
+      // Get URL from storage
+      const connectorUrl = await new Promise(resolve => {
+        chrome.storage.local.get(['connectorUrl'], result => {
+          resolve(result.connectorUrl || 'http://127.0.0.1:3000');
+        });
+      });
 
-      // SECURITY: 10-Second Max Duration
-      // Prevents the mic from hanging open indefinitely
-      watchdogTimer = setTimeout(() => {
-        if (isListening) {
-          recognition.stop();
-          updateStatus("Timed out.", true);
+      const formData = new FormData();
+      formData.append('audio', blob, 'recording.webm');
+
+      try {
+        const response = await fetch(`${connectorUrl}/transcribe`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) throw new Error('Transcription failed');
+
+        const result = await response.json();
+        if (result.success) {
+          input.value = result.text;
+          updateStatus("");
+          handleQuery(); // Auto-submit
+        } else {
+          updateStatus("STT Error");
         }
-      }, 10000); 
-    };
-
-    recognition.onend = () => {
-      isListening = false;
-      micBtn.classList.remove('listening');
-      clearTimeout(watchdogTimer); // Clean up timer
-      
-      // If the user just stopped speaking without valid input, reset text
-      if (input.value.trim() === "") {
-         updateStatus("No speech detected.");
-      } else {
-         updateStatus(""); // Clear status if we have text
+      } catch (err) {
+        updateStatus("Backend Error");
+        console.error(err);
       }
-    };
-
-    recognition.onresult = (event) => {
-      // Extract transcript
-      // event.resultIndex is usually 0 for single-shot mode
-      const transcript = event.results[0][0].transcript;
-
-      // SECURITY: Length Validation
-      // We truncate visually or stop processing if it exceeds limits
-      if (transcript.length > 200) {
-        recognition.stop();
-        updateStatus("Input too long.", true);
-        return;
-      }
-
-      // Live Feedback
-      input.value = transcript;
-
-      // Check if this is the "Final" result (user stopped speaking)
-      if (event.results[0].isFinal) {
-        // Automatic Handoff to Submission Logic
-        handleQuery();
-      }
-    };
-
-    recognition.onerror = (event) => {
-      clearTimeout(watchdogTimer);
-      isListening = false;
-      micBtn.classList.remove('listening');
-
-      // Granular Error Handling
-      switch (event.error) {
-        case 'not-allowed':
-          updateStatus("Permission denied.", true);
-          break;
-        case 'no-speech':
-          updateStatus("No speech detected.", true);
-          break;
-        case 'network':
-          updateStatus("Offline: Voice unavailable.", true);
-          break;
-        default:
-          updateStatus("Voice Error: " + event.error, true);
-      }
-    };
+    }
   }
 
   function updateStatus(msg, isError = false) {
@@ -142,14 +127,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- CORE QUERY PIPELINE (Reused) ---
   function handleQuery() {
     const query = input.value.trim();
-    
+
     // Clear status
     output.classList.remove('error');
     output.style.borderColor = "#ddd";
 
     // 1. Validation (Applies to both Voice and Type)
     if (!query) return; // Ignore empty inputs
-    
+
     if (query.length > 200) {
       showOutput("Error: Query too long (max 200 chars).", "error");
       return;

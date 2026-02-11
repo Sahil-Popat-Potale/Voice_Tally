@@ -2,6 +2,24 @@
 
 ---
 
+Log Date: 11-02-2026
+
+### Changes/Audit
+
+0. **Libraries:** added date-fns for date manipulation, @xenova/transformers for STT integration, ffmpeg for audio processing, wavefile for audio processing.
+
+1. **server.js:** added STT integration with Whisper API.
+
+2. **background.js:** welcome.html is added for the first time use.
+
+3. **popup.js:** major changes in Audio processing and STT integration, permission handling for microphone access, UI changes.
+
+4. **welcome.html:** added welcome page for the first time use.
+
+5. **welcome.js:** added logic for the welcome page(mic permission).
+
+---
+
 Log Date: 04-02-2026
 
 ### Changes/Audit

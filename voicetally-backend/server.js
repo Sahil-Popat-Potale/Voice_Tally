@@ -8,14 +8,40 @@ const app = express();
 const PORT = process.env.PORT;
 const HOST = process.env.HOST; // STRICT: Localhost only
 
+const multer = require('multer');
+const { pipeline } = require('@xenova/transformers');
+const fs = require('fs');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+
+// Configure ffmpeg
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+// Initialize STT Pipeline (Lazy Load or Global)
+let transcriber = null;
+(async () => {
+  try {
+    console.log("[STT] Loading Whisper model (Xenova/whisper-tiny.en)...");
+    transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en');
+    console.log("[STT] Model loaded successfully.");
+  } catch (err) {
+    console.error("[STT] Failed to load model:", err);
+  }
+})();
+
 // --- SECURITY MIDDLEWARE ---
 
 // 1. Helmet: Sets various HTTP headers to secure the app
 app.use(helmet());
 
-// 2. CORS: Restrict access to specific origins (e.g., your extension ID)
-// For MVP dev, we allow all, but in prod, this should be your Extension ID.
-app.use(cors({ origin: '*' }));
+// 2. CORS: Restrict access to specific origins
+const corsOptions = {
+  origin: process.env.EXTENSION_ID
+    ? `chrome-extension://${process.env.EXTENSION_ID}`
+    : '*', // Fallback for dev/testing if ID not set
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 
 // 3. Rate Limiter: Prevent brute force/DoS
 const limiter = rateLimit({
@@ -90,58 +116,52 @@ app.listen(PORT, HOST, () => {
   console.log(`[Security] Rate Limit: ${process.env.RATE_LIMIT_MAX_REQ} reqs / ${process.env.RATE_LIMIT_WINDOW_MIN} min`);
 });
 
-// Conceptual Implementation, Secure STT Endpoint (Fragment)
-const multer = require('multer'); // Middleware for multipart/form-data
-const fs = require('fs');
-const { exec } = require('child_process');
+// --- STT ENDPOINT (Local Whisper) ---
+const upload = multer({ dest: require('os').tmpdir() });
 
-// 1. Configure Storage (Ephemeral)
-const upload = multer({
-  dest: require('os').tmpdir(), // Save to RAM-disk or Temp
-  limits: {
-    fileSize: 1024 * 1024, // 1MB Hard Limit
-    files: 1
-  }
-});
-
-// 2. Global Lock (Simple Concurrency Control)
-let isTranscribing = false;
-
-app.post('/transcribe', upload.single('audio'), (req, res) => {
-  // A. Concurrency Check
-  if (isTranscribing) {
-    cleanup(req.file.path);
-    return res.status(429).json({ error: "System busy processing another voice command." });
-  }
-
-  // B. Validation
+app.post('/transcribe', upload.single('audio'), async (req, res) => {
+  if (!transcriber) return res.status(503).json({ error: "Model is loading, please try again." });
   if (!req.file) return res.status(400).json({ error: "No audio file provided." });
-  if (req.file.mimetype !== 'audio/wav' && req.file.mimetype !== 'audio/webm') {
-    cleanup(req.file.path);
-    return res.status(400).json({ error: "Invalid format. Send WAV or WebM." });
+
+  const inputPath = req.file.path;
+  const outputPath = inputPath + '.wav';
+
+  try {
+    // Convert WebM (Opus) -> WAV (PCM 16kHz Mono for best results)
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .toFormat('wav')
+        .audioFrequency(16000)
+        .audioChannels(1)
+        .on('end', resolve)
+        .on('error', reject)
+        .save(outputPath);
+    });
+
+    // Run Transcription on WAV file
+    const output = await transcriber(outputPath, {
+      chunk_length_s: 30,
+      stride_length_s: 5,
+      language: 'english',
+      task: 'transcribe',
+    });
+
+    const text = output.text.trim().replace(/\[.*?\]/g, '');
+    console.log(`[STT] Transcribed: "${text}"`);
+
+    // Cleanup
+    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+
+    res.json({ success: true, text: text });
+
+  } catch (err) {
+    console.error("[STT] Error:", err);
+    // Cleanup on error
+    if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+
+    res.status(500).json({ error: "Transcription failed." });
   }
-
-  isTranscribing = true;
-
-  // C. Execute Local Whisper (Example Command)
-  // Assumes 'whisper-main' executable is in path or bundled
-  const cmd = `./bin/whisper-main -m models/ggml-tiny.en.bin -f "${req.file.path}" -nt`;
-
-  const process = exec(cmd, { timeout: 10000 }, (error, stdout, stderr) => {
-    isTranscribing = false;
-    cleanup(req.file.path); // D. Security: Immediate Deletion
-
-    if (error) {
-      console.error("STT Error:", stderr);
-      return res.status(500).json({ error: "Transcription failed." });
-    }
-
-    // E. Text Normalization
-    const cleanText = stdout.trim().replace(/\[.*?\]/g, ''); // Remove timestamps/metadata
-    res.json({ success: true, text: cleanText });
-  });
 });
 
-function cleanup(path) {
-  if (path && fs.existsSync(path)) fs.unlinkSync(path);
-}
