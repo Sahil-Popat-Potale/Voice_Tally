@@ -138,8 +138,23 @@ app.post('/transcribe', upload.single('audio'), async (req, res) => {
         .save(outputPath);
     });
 
-    // Run Transcription on WAV file
-    const output = await transcriber(outputPath, {
+    // Read and decode WAV file to Float32Array for Transformers.js
+    const buffer = fs.readFileSync(outputPath);
+    const { WaveFile } = require('wavefile');
+    const wav = new WaveFile();
+    wav.fromBuffer(buffer);
+
+    wav.toBitDepth('32f'); // Convert to 32-bit float
+    wav.toBitDepth('32f'); // Convert to 32-bit float
+    let audioData = wav.getSamples();
+
+    // Handle potential multi-channel output from wavefile (though we forced mono)
+    if (Array.isArray(audioData)) {
+      audioData = audioData[0];
+    }
+
+    // Run Transcription on Audio Data
+    const output = await transcriber(audioData, {
       chunk_length_s: 30,
       stride_length_s: 5,
       language: 'english',
